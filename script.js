@@ -1,30 +1,33 @@
+// Global variable to hold the TensorFlow model
 let model;
 
-// Load the model
+// Load the TensorFlow model
 async function loadModel() {
     console.log("Loading model...");
     try {
-        model = await tf.loadLayersModel('./modeloexportado/model.json');
+        model = await tf.loadLayersModel('./modeloexportado/model.json'); // Load pre-trained model
         console.log("Model loaded successfully.");
-        model.summary();
-        classifyButton.disabled = false; // Enable button after model loads
+        model.summary(); // Display model details in the console
+        classifyButton.disabled = false; // Enable classify button
     } catch (error) {
-        console.error("Error loading model:", error);
+        console.error("Error loading model:", error); // Log any errors
     }
 }
 
-loadModel();
+loadModel(); // Call the function to load the model
 
+// DOM elements
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { willReadFrequently: true }); // Improve performance
+const ctx = canvas.getContext('2d', { willReadFrequently: true }); // Allow frequent reads for better performance
 const fileInput = document.getElementById('file-input');
 const classifyButton = document.getElementById('classify-button');
 const clearButton = document.getElementById('clear-button');
 const resultDisplay = document.getElementById('prediction-result');
 
-// Disable classify button initially
+// Disable classify button initially (until model is loaded)
 classifyButton.disabled = true;
 
+// Handle image upload
 fileInput.addEventListener('change', (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -32,80 +35,70 @@ fileInput.addEventListener('change', (event) => {
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
-                // Clear the canvas and set a white background
+                // Clear canvas and set a white background
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = "#ffffff"; // Set background to white
+                ctx.fillStyle = "#ffffff"; // Set white background
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // Draw the image onto the canvas
+                // Draw the uploaded image onto the canvas
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             };
-            img.src = e.target.result;
+            img.src = e.target.result; // Set image source from file reader
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(file); // Read file as data URL
     } else {
-        console.error("No file selected.");
+        console.error("No file selected."); // Log if no file is selected
     }
 });
 
+// Handle classify button click
 classifyButton.addEventListener('click', async () => {
     try {
-        // Get the image data from the canvas
+        // Extract image data from canvas
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-        // Debug: Log raw pixel data
-        console.log("Raw canvas pixel data (first 10 values):", imageData.data.slice(0, 10));
+        // Convert image data to TensorFlow tensor
+        const input = tf.browser.fromPixels(imageData, 1) // Convert to grayscale
+            .resizeBilinear([28, 28])                    // Resize to 28x28 pixels
+            .toFloat()                                   // Convert to float values
+            .div(255)                                    // Normalize to range [0, 1]
+            .expandDims(0);                              // Add batch dimension
 
-        // Convert canvas data to a TensorFlow tensor
-        const input = tf.browser.fromPixels(imageData, 1) // Grayscale (1 channel)
-            .resizeBilinear([28, 28])                    // Resize to 28x28
-            .toFloat()                                  // Convert to float
-            .div(255)                                   // Normalize to [0, 1]
-            .expandDims(0);                             // Add batch dimension
+        // Debugging: Log preprocessed input
+        console.log("Preprocessed input tensor:", input.dataSync().slice(0, 10));
 
-        // Debugging: Log preprocessed tensor values
-        const inputValues = input.dataSync();
-        console.log("Preprocessed tensor (first 10 values):", inputValues.slice(0, 10));
-
-        // Check for invalid or empty input
-        if (inputValues.every(value => value === 0)) {
-            console.warn("Input is empty or invalid.");
+        // Check for empty input
+        if (input.dataSync().every(value => value === 0)) {
             resultDisplay.innerText = "Please provide a valid image.";
             return;
         }
 
-        // Predict the class probabilities
+        // Perform prediction
         const prediction = await model.predict(input).array();
         console.log("Prediction probabilities:", prediction[0]);
 
-        // Class names corresponding to the model's output
+        // Map output to class names
         const classNames = [
             "T-shirt/top", "Trouser", "Pullover", "Dress", "Coat",
             "Sandal", "Shirt", "Sneaker", "Bag", "Ankle Boot"
         ];
-
-        // Find the predicted class
-        const predictedClassIndex = prediction[0].indexOf(Math.max(...prediction[0]));
-        const predictedClass = classNames[predictedClassIndex];
+        const predictedClassIndex = prediction[0].indexOf(Math.max(...prediction[0])); // Find index of max probability
+        const predictedClass = classNames[predictedClassIndex]; // Get class name
         resultDisplay.innerText = `Prediction: ${predictedClass}`;
     } catch (error) {
-        console.error("Error during classification:", error);
-        resultDisplay.innerText = "Error during prediction. Check console for details.";
+        console.error("Error during classification:", error); // Log errors
+        resultDisplay.innerText = "Error during prediction.";
     }
 });
 
-// Clear canvas and reset prediction display
+// Handle clear button click
 clearButton.addEventListener('click', () => {
     // Clear the canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Reset canvas background to white
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#ffffff"; // Reset to white background
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Reset the prediction display
-    resultDisplay.innerText = "Prediction will appear here";
-
-    // Reset file input
-    fileInput.value = "";
+    // Reset result display
+    resultDisplay.innerText = "Results will appear here";
+    fileInput.value = ""; // Reset file input
 });
